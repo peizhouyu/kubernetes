@@ -37,6 +37,8 @@ type kubeAPIServeETCDEnv struct {
 	StorageBackend      string
 	StorageMediaType    string
 	CompactionInterval  string
+	HostPrimaryIP       string
+	ETCDListenOnHostIP  string
 }
 
 func TestServerOverride(t *testing.T) {
@@ -52,13 +54,24 @@ func TestServerOverride(t *testing.T) {
 			},
 		},
 		{
-			desc: "ETCD-SERVERS and ETCD_SERVERS_OVERRIDES iare set",
+			desc: "ETCD-SERVERS and ETCD_SERVERS_OVERRIDES are set",
 			env: kubeAPIServeETCDEnv{
 				ETCDServers:         "ETCDServers",
 				ETCDServersOverride: "ETCDServersOverrides",
 			},
 			want: []string{
 				"--etcd-servers-overrides=ETCDServersOverrides",
+			},
+		},
+		{
+			desc: "HOST_PRIMARY_IP is set and etcd is set to listen to host IP",
+			env: kubeAPIServeETCDEnv{
+				HostPrimaryIP:      "HostPrimaryIP",
+				ETCDListenOnHostIP: "true",
+			},
+			want: []string{
+				"--etcd-servers-overrides=/events#http://HostPrimaryIP:4002",
+				"--etcd-servers=http://HostPrimaryIP:2379",
 			},
 		},
 	}
@@ -71,14 +84,14 @@ func TestServerOverride(t *testing.T) {
 
 			c.mustInvokeFunc(
 				tc.env,
-				kubeAPIServerConfigScriptName,
+				[]string{"configure-helper.sh", kubeAPIServerConfigScriptName},
 				"etcd.template",
 				"testdata/kube-apiserver/base.template",
 				"testdata/kube-apiserver/etcd.template",
 			)
 			c.mustLoadPodFromManifest()
 
-			execArgs := c.pod.Spec.Containers[0].Command[2]
+			execArgs := strings.Join(c.pod.Spec.Containers[0].Command, " ")
 			for _, f := range tc.want {
 				if !strings.Contains(execArgs, f) {
 					t.Fatalf("Got %q, want it to contain %q", execArgs, f)
@@ -127,14 +140,14 @@ func TestStorageOptions(t *testing.T) {
 
 			c.mustInvokeFunc(
 				tc.env,
-				kubeAPIServerConfigScriptName,
+				[]string{"configure-helper.sh", kubeAPIServerConfigScriptName},
 				"etcd.template",
 				"testdata/kube-apiserver/base.template",
 				"testdata/kube-apiserver/etcd.template",
 			)
 			c.mustLoadPodFromManifest()
 
-			execArgs := c.pod.Spec.Containers[0].Command[2]
+			execArgs := strings.Join(c.pod.Spec.Containers[0].Command, " ")
 			for _, f := range tc.want {
 				if !strings.Contains(execArgs, f) {
 					t.Fatalf("Got %q, want it to contain %q", execArgs, f)
@@ -191,14 +204,14 @@ func TestTLSFlags(t *testing.T) {
 
 			c.mustInvokeFunc(
 				tc.env,
-				kubeAPIServerConfigScriptName,
+				[]string{"configure-helper.sh", kubeAPIServerConfigScriptName},
 				"etcd.template",
 				"testdata/kube-apiserver/base.template",
 				"testdata/kube-apiserver/etcd.template",
 			)
 			c.mustLoadPodFromManifest()
 
-			execArgs := c.pod.Spec.Containers[0].Command[2]
+			execArgs := strings.Join(c.pod.Spec.Containers[0].Command, " ")
 			for _, f := range tc.want {
 				if !strings.Contains(execArgs, f) {
 					t.Fatalf("Got %q, want it to contain %q", execArgs, f)

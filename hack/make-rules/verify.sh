@@ -48,15 +48,18 @@ if [[ ${EXCLUDE_TYPECHECK:-} =~ ^[yY]$ ]]; then
   EXCLUDED_PATTERNS+=(
     "verify-typecheck.sh"              # runs in separate typecheck job
     "verify-typecheck-providerless.sh" # runs in separate typecheck job
+    "verify-typecheck-dockerless.sh" # runs in separate typecheck job
     )
 fi
 
-
-# Exclude vendor checks in certain cases, if they're running in a separate job.
+# Exclude dependency checks in certain cases, if they're running in a separate job.
+# From @cblecker: We can't change the variable name here, unless we update it throughout
+#                 test-infra (and we would need to pick it backwards).
 if [[ ${EXCLUDE_GODEP:-} =~ ^[yY]$ ]]; then
   EXCLUDED_PATTERNS+=(
-    "verify-vendor.sh"             # runs in separate godeps job
-    "verify-vendor-licenses.sh"    # runs in separate godeps job
+    "verify-external-dependencies-version.sh" # runs in separate dependencies job
+    "verify-vendor.sh"                        # runs in separate dependencies job
+    "verify-vendor-licenses.sh"               # runs in separate dependencies job
     )
 fi
 
@@ -74,6 +77,7 @@ QUICK_PATTERNS+=(
   "verify-api-groups.sh"
   "verify-bazel.sh"
   "verify-boilerplate.sh"
+  "verify-external-dependencies-version.sh"
   "verify-vendor-licenses.sh"
   "verify-gofmt.sh"
   "verify-imports.sh"
@@ -86,8 +90,8 @@ QUICK_PATTERNS+=(
   "verify-test-images.sh"
 )
 
-while IFS='' read -r line; do EXCLUDED_CHECKS+=("$line"); done < <(ls "${EXCLUDED_PATTERNS[@]/#/${KUBE_ROOT}\/hack\/}" 2>/dev/null || true)
-while IFS='' read -r line; do QUICK_CHECKS+=("$line"); done < <(ls "${QUICK_PATTERNS[@]/#/${KUBE_ROOT}\/hack\/}" 2>/dev/null || true)
+while IFS='' read -r line; do EXCLUDED_CHECKS+=("$line"); done < <(ls "${EXCLUDED_PATTERNS[@]/#/${KUBE_ROOT}/hack/}" 2>/dev/null || true)
+while IFS='' read -r line; do QUICK_CHECKS+=("$line"); done < <(ls "${QUICK_PATTERNS[@]/#/${KUBE_ROOT}/hack/}" 2>/dev/null || true)
 TARGET_LIST=()
 IFS=" " read -r -a TARGET_LIST <<< "${WHAT:-}"
 
@@ -216,7 +220,7 @@ fi
 
 ret=0
 run-checks "${KUBE_ROOT}/hack/verify-*.sh" bash
-run-checks "${KUBE_ROOT}/hack/verify-*.py" python
+run-checks "${KUBE_ROOT}/hack/verify-*.py" python3
 missing-target-checks
 
 if [[ ${ret} -eq 1 ]]; then

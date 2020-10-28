@@ -456,6 +456,7 @@ var _ = utils.SIGDescribe("PersistentVolumes-local ", func() {
 			ginkgo.By("Start a goroutine to recycle unbound PVs")
 			wg.Add(1)
 			go func() {
+				defer ginkgo.GinkgoRecover()
 				defer wg.Done()
 				w, err := config.client.CoreV1().PersistentVolumes().Watch(context.TODO(), metav1.ListOptions{})
 				framework.ExpectNoError(err)
@@ -1073,10 +1074,10 @@ func testReadFileContent(f *framework.Framework, testFileDir string, testFile st
 // Execute a read or write command in a pod.
 // Fail on error
 func podRWCmdExec(f *framework.Framework, pod *v1.Pod, cmd string) string {
-	out, err := utils.PodExec(f, pod, cmd)
-	framework.Logf("podRWCmdExec out: %q err: %v", out, err)
+	stdout, stderr, err := utils.PodExec(f, pod, cmd)
+	framework.Logf("podRWCmdExec cmd: %q, out: %q, stderr: %q, err: %v", cmd, stdout, stderr, err)
 	framework.ExpectNoError(err)
-	return out
+	return stdout
 }
 
 // Initialize test volume on node

@@ -40,12 +40,15 @@ import (
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	genericapi "k8s.io/apiserver/pkg/endpoints"
 	"k8s.io/apiserver/pkg/endpoints/discovery"
+	"k8s.io/apiserver/pkg/endpoints/handlers/fieldmanager"
+	"k8s.io/apiserver/pkg/features"
 	"k8s.io/apiserver/pkg/registry/rest"
 	"k8s.io/apiserver/pkg/server/healthz"
 	"k8s.io/apiserver/pkg/server/routes"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	utilopenapi "k8s.io/apiserver/pkg/util/openapi"
 	restclient "k8s.io/client-go/rest"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	openapibuilder "k8s.io/kube-openapi/pkg/builder"
 	openapicommon "k8s.io/kube-openapi/pkg/common"
 	"k8s.io/kube-openapi/pkg/handler"
@@ -330,7 +333,7 @@ func (s preparedGenericAPIServer) Run(stopCh <-chan struct{}) error {
 	}()
 
 	// close socket after delayed stopCh
-	err := s.NonBlockingRun(delayedStopCh)
+	stoppedCh, err := s.NonBlockingRun(delayedStopCh)
 	if err != nil {
 		return err
 	}
@@ -345,6 +348,8 @@ func (s preparedGenericAPIServer) Run(stopCh <-chan struct{}) error {
 
 	// wait for the delayed stopCh before closing the handler chain (it rejects everything after Wait has been called).
 	<-delayedStopCh
+	// wait for stoppedCh that is closed when the graceful termination (server.Shutdown) is finished.
+	<-stoppedCh
 
 	// Wait for all requests to finish, which are bounded by the RequestTimeout variable.
 	s.HandlerChainWaitGroup.Wait()
@@ -354,7 +359,8 @@ func (s preparedGenericAPIServer) Run(stopCh <-chan struct{}) error {
 
 // NonBlockingRun spawns the secure http server. An error is
 // returned if the secure port cannot be listened on.
-func (s preparedGenericAPIServer) NonBlockingRun(stopCh <-chan struct{}) error {
+// The returned channel is closed when the (asynchronous) termination is finished.
+func (s preparedGenericAPIServer) NonBlockingRun(stopCh <-chan struct{}) (<-chan struct{}, error) {
 	// Use an stop channel to allow graceful shutdown without dropping audit events
 	// after http server shutdown.
 	auditStopCh := make(chan struct{})
@@ -363,7 +369,7 @@ func (s preparedGenericAPIServer) NonBlockingRun(stopCh <-chan struct{}) error {
 	// before http server start serving. Otherwise the Backend.ProcessEvents call might block.
 	if s.AuditBackend != nil {
 		if err := s.AuditBackend.Run(auditStopCh); err != nil {
-			return fmt.Errorf("failed to run the audit backend: %v", err)
+			return nil, fmt.Errorf("failed to run the audit backend: %v", err)
 		}
 	}
 
@@ -376,7 +382,7 @@ func (s preparedGenericAPIServer) NonBlockingRun(stopCh <-chan struct{}) error {
 		if err != nil {
 			close(internalStopCh)
 			close(auditStopCh)
-			return err
+			return nil, err
 		}
 	}
 
@@ -399,7 +405,7 @@ func (s preparedGenericAPIServer) NonBlockingRun(stopCh <-chan struct{}) error {
 		klog.Errorf("Unable to send systemd daemon successful start message: %v\n", err)
 	}
 
-	return nil
+	return stoppedCh, nil
 }
 
 // installAPIResources is a private method for installing the REST storage backing each api groupversionresource
@@ -415,6 +421,15 @@ func (s *GenericAPIServer) installAPIResources(apiPrefix string, apiGroupInfo *A
 			apiGroupVersion.OptionsExternalVersion = apiGroupInfo.OptionsExternalVersion
 		}
 		apiGroupVersion.OpenAPIModels = openAPIModels
+
+		if openAPIModels != nil && utilfeature.DefaultFeatureGate.Enabled(features.ServerSideApply) {
+			typeConverter, err := fieldmanager.NewTypeConverter(openAPIModels, false)
+			if err != nil {
+				return err
+			}
+			apiGroupVersion.TypeConverter = typeConverter
+		}
+
 		apiGroupVersion.MaxRequestBodyBytes = s.maxRequestBodyBytes
 
 		if err := apiGroupVersion.InstallREST(s.Handler.GoRestfulContainer); err != nil {

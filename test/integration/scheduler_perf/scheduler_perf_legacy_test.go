@@ -31,7 +31,7 @@ import (
 	featuregatetesting "k8s.io/component-base/featuregate/testing"
 	"k8s.io/csi-translation-lib/plugins"
 	csilibplugins "k8s.io/csi-translation-lib/plugins"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/volume/util"
 	"k8s.io/kubernetes/test/integration/framework"
@@ -448,7 +448,7 @@ func benchmarkScheduling(numExistingPods, minPods int,
 		clientset,
 		nodeStrategies,
 		"scheduler-perf-")
-	if err := nodePreparer.PrepareNodes(); err != nil {
+	if err := nodePreparer.PrepareNodes(0); err != nil {
 		klog.Fatalf("%v", err)
 	}
 	defer nodePreparer.CleanupNodes()

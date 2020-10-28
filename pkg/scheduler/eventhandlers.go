@@ -20,18 +20,17 @@ import (
 	"fmt"
 	"reflect"
 
-	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/scheduler/profile"
+	"k8s.io/klog/v2"
 
 	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
-	coreinformers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/scheduler/internal/queue"
+	"k8s.io/kubernetes/pkg/scheduler/profile"
 )
 
 func (sched *Scheduler) onPvAdd(obj interface{}) {
@@ -206,18 +205,14 @@ func (sched *Scheduler) deletePodFromSchedulingQueue(obj interface{}) {
 	if err := sched.SchedulingQueue.Delete(pod); err != nil {
 		utilruntime.HandleError(fmt.Errorf("unable to dequeue %T: %v", obj, err))
 	}
-	if sched.VolumeBinder != nil {
-		// Volume binder only wants to keep unassigned pods
-		sched.VolumeBinder.DeletePodBindings(pod)
-	}
-	prof, err := sched.profileForPod(pod)
+	fwk, err := sched.frameworkForPod(pod)
 	if err != nil {
 		// This shouldn't happen, because we only accept for scheduling the pods
 		// which specify a scheduler name that matches one of the profiles.
 		klog.Error(err)
 		return
 	}
-	prof.Framework.RejectWaitingPod(pod.UID)
+	fwk.RejectWaitingPod(pod.UID)
 }
 
 func (sched *Scheduler) addPodToCache(obj interface{}) {
@@ -244,6 +239,15 @@ func (sched *Scheduler) updatePodInCache(oldObj, newObj interface{}) {
 	newPod, ok := newObj.(*v1.Pod)
 	if !ok {
 		klog.Errorf("cannot convert newObj to *v1.Pod: %v", newObj)
+		return
+	}
+
+	// A Pod delete event followed by an immediate Pod add event may be merged
+	// into a Pod update event. In this case, we should invalidate the old Pod, and
+	// then add the new Pod.
+	if oldPod.UID != newPod.UID {
+		sched.deletePodFromCache(oldObj)
+		sched.addPodToCache(newObj)
 		return
 	}
 
@@ -301,8 +305,8 @@ func responsibleForPod(pod *v1.Pod, profiles profile.Map) bool {
 // skipPodUpdate checks whether the specified pod update should be ignored.
 // This function will return true if
 //   - The pod has already been assumed, AND
-//   - The pod has only its ResourceVersion, Spec.NodeName and/or Annotations
-//     updated.
+//   - The pod has only its ResourceVersion, Spec.NodeName, Annotations,
+//     ManagedFields, Finalizers and/or Conditions updated.
 func (sched *Scheduler) skipPodUpdate(pod *v1.Pod) bool {
 	// Non-assumed pods should never be skipped.
 	isAssumed, err := sched.SchedulerCache.IsAssumedPod(pod)
@@ -338,6 +342,10 @@ func (sched *Scheduler) skipPodUpdate(pod *v1.Pod) bool {
 		// Same as above, when annotations are modified with ServerSideApply,
 		// ManagedFields may also change and must be excluded
 		p.ManagedFields = nil
+		// The following might be changed by external controllers, but they don't
+		// affect scheduling decisions.
+		p.Finalizers = nil
+		p.Status.Conditions = nil
 		return p
 	}
 	assumedPodCopy, podCopy := f(assumedPod), f(pod)
@@ -353,10 +361,9 @@ func (sched *Scheduler) skipPodUpdate(pod *v1.Pod) bool {
 func addAllEventHandlers(
 	sched *Scheduler,
 	informerFactory informers.SharedInformerFactory,
-	podInformer coreinformers.PodInformer,
 ) {
 	// scheduled pod cache
-	podInformer.Informer().AddEventHandler(
+	informerFactory.Core().V1().Pods().Informer().AddEventHandler(
 		cache.FilteringResourceEventHandler{
 			FilterFunc: func(obj interface{}) bool {
 				switch t := obj.(type) {
@@ -381,7 +388,7 @@ func addAllEventHandlers(
 		},
 	)
 	// unscheduled pod queue
-	podInformer.Informer().AddEventHandler(
+	informerFactory.Core().V1().Pods().Informer().AddEventHandler(
 		cache.FilteringResourceEventHandler{
 			FilterFunc: func(obj interface{}) bool {
 				switch t := obj.(type) {

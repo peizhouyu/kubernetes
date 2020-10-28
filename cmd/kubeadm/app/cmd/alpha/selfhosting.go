@@ -56,8 +56,8 @@ var (
 		`)
 )
 
-// NewCmdSelfhosting returns the self-hosting Cobra command
-func NewCmdSelfhosting(in io.Reader) *cobra.Command {
+// newCmdSelfhosting returns the self-hosting Cobra command
+func newCmdSelfhosting(in io.Reader) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "selfhosting",
 		Aliases: []string{"selfhosted", "self-hosting"},
@@ -136,6 +136,7 @@ func getSelfhostingSubCommand(in io.Reader) *cobra.Command {
 			waiter := apiclient.NewKubeWaiter(client, 2*time.Minute, os.Stdout)
 			return selfhosting.CreateSelfHostedControlPlane(constants.GetStaticPodDirectory(), constants.KubernetesDir, internalcfg, client, waiter, false, certsInSecrets)
 		},
+		Args: cobra.NoArgs,
 	}
 
 	// Add flags to the command

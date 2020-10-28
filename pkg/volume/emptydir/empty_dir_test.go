@@ -36,7 +36,7 @@ import (
 	"k8s.io/kubernetes/pkg/volume"
 	volumetest "k8s.io/kubernetes/pkg/volume/testing"
 	"k8s.io/kubernetes/pkg/volume/util"
-	"k8s.io/utils/mount"
+	"k8s.io/mount-utils"
 )
 
 // Construct an instance of a plugin, by name.
@@ -835,6 +835,12 @@ func TestGetPageSize(t *testing.T) {
 				Type:   "hugetlbfs",
 				Path:   "/mnt/hugepages-2Mi",
 				Opts:   []string{"rw", "relatime", "pagesize=2M"},
+			},
+			{
+				Device: "/dev/hugepages",
+				Type:   "hugetlbfs",
+				Path:   "/mnt/hugepages-2Mi",
+				Opts:   []string{"rw", "relatime", "pagesize=2Mi"},
 			},
 			{
 				Device: "sysfs",

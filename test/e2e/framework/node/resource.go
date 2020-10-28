@@ -28,7 +28,11 @@ import (
 	"github.com/onsi/gomega"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/conversion"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -37,10 +41,6 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	clientretry "k8s.io/client-go/util/retry"
 	e2elog "k8s.io/kubernetes/test/e2e/framework/log"
-
-	// TODO remove the direct dependency for internal k8s.io/kubernetes
-	"k8s.io/kubernetes/pkg/controller"
-	"k8s.io/kubernetes/test/e2e/system"
 )
 
 const (
@@ -191,7 +191,7 @@ func Filter(nodeList *v1.NodeList, fn func(node v1.Node) bool) {
 	nodeList.Items = l
 }
 
-// TotalRegistered returns number of registered Nodes excluding Master Node.
+// TotalRegistered returns number of schedulable Nodes.
 func TotalRegistered(c clientset.Interface) (int, error) {
 	nodes, err := waitListSchedulableNodes(c)
 	if err != nil {
@@ -201,7 +201,7 @@ func TotalRegistered(c clientset.Interface) (int, error) {
 	return len(nodes.Items), nil
 }
 
-// TotalReady returns number of ready Nodes excluding Master Node.
+// TotalReady returns number of ready schedulable Nodes.
 func TotalReady(c clientset.Interface) (int, error) {
 	nodes, err := waitListSchedulableNodes(c)
 	if err != nil {
@@ -360,24 +360,6 @@ func GetReadyNodesIncludingTainted(c clientset.Interface) (nodes *v1.NodeList, e
 	return nodes, nil
 }
 
-// GetMasterAndWorkerNodes will return a list masters and schedulable worker nodes
-func GetMasterAndWorkerNodes(c clientset.Interface) (sets.String, *v1.NodeList, error) {
-	nodes := &v1.NodeList{}
-	masters := sets.NewString()
-	all, err := c.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		return nil, nil, fmt.Errorf("get nodes error: %s", err)
-	}
-	for _, n := range all.Items {
-		if system.DeprecatedMightBeMasterNode(n.Name) {
-			masters.Insert(n.Name)
-		} else if IsNodeSchedulable(&n) && isNodeUntainted(&n) {
-			nodes.Items = append(nodes.Items, n)
-		}
-	}
-	return masters, nodes, nil
-}
-
 // isNodeUntainted tests whether a fake pod can be scheduled on "node", given its current taints.
 // TODO: need to discuss wether to return bool and error type
 func isNodeUntainted(node *v1.Node) bool {
@@ -473,6 +455,14 @@ func IsNodeReady(node *v1.Node) bool {
 	networkReady := isConditionUnset(node, v1.NodeNetworkUnavailable) ||
 		IsConditionSetAsExpectedSilent(node, v1.NodeNetworkUnavailable, false)
 	return nodeReady && networkReady
+}
+
+// isNodeSchedulableWithoutTaints returns true if:
+// 1) doesn't have "unschedulable" field set
+// 2) it also returns true from IsNodeReady
+// 3) it also returns true from isNodeUntainted
+func isNodeSchedulableWithoutTaints(node *v1.Node) bool {
+	return IsNodeSchedulable(node) && isNodeUntainted(node)
 }
 
 // hasNonblockingTaint returns true if the node contains at least
@@ -575,9 +565,106 @@ func RemoveTaintOffNode(c clientset.Interface, nodeName string, taint v1.Taint) 
 func AddOrUpdateTaintOnNode(c clientset.Interface, nodeName string, taint v1.Taint) {
 	// TODO use wrapper methods in expect.go after removing the dependency on this
 	// package from the core e2e framework.
-	err := controller.AddOrUpdateTaintOnNode(c, nodeName, &taint)
+	err := addOrUpdateTaintOnNode(c, nodeName, &taint)
 	gomega.ExpectWithOffset(2, err).NotTo(gomega.HaveOccurred())
 }
+
+// addOrUpdateTaintOnNode add taints to the node. If taint was added into node, it'll issue API calls
+// to update nodes; otherwise, no API calls. Return error if any.
+// copied from pkg/controller/controller_utils.go AddOrUpdateTaintOnNode()
+func addOrUpdateTaintOnNode(c clientset.Interface, nodeName string, taints ...*v1.Taint) error {
+	if len(taints) == 0 {
+		return nil
+	}
+	firstTry := true
+	return clientretry.RetryOnConflict(updateTaintBackOff, func() error {
+		var err error
+		var oldNode *v1.Node
+		// First we try getting node from the API server cache, as it's cheaper. If it fails
+		// we get it from etcd to be sure to have fresh data.
+		if firstTry {
+			oldNode, err = c.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{ResourceVersion: "0"})
+			firstTry = false
+		} else {
+			oldNode, err = c.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
+		}
+		if err != nil {
+			return err
+		}
+
+		var newNode *v1.Node
+		oldNodeCopy := oldNode
+		updated := false
+		for _, taint := range taints {
+			curNewNode, ok, err := addOrUpdateTaint(oldNodeCopy, taint)
+			if err != nil {
+				return fmt.Errorf("failed to update taint of node")
+			}
+			updated = updated || ok
+			newNode = curNewNode
+			oldNodeCopy = curNewNode
+		}
+		if !updated {
+			return nil
+		}
+		return patchNodeTaints(c, nodeName, oldNode, newNode)
+	})
+}
+
+// addOrUpdateTaint tries to add a taint to annotations list. Returns a new copy of updated Node and true if something was updated
+// false otherwise.
+// copied from pkg/util/taints/taints.go AddOrUpdateTaint()
+func addOrUpdateTaint(node *v1.Node, taint *v1.Taint) (*v1.Node, bool, error) {
+	newNode := node.DeepCopy()
+	nodeTaints := newNode.Spec.Taints
+
+	var newTaints []v1.Taint
+	updated := false
+	for i := range nodeTaints {
+		if taint.MatchTaint(&nodeTaints[i]) {
+			if semantic.DeepEqual(*taint, nodeTaints[i]) {
+				return newNode, false, nil
+			}
+			newTaints = append(newTaints, *taint)
+			updated = true
+			continue
+		}
+
+		newTaints = append(newTaints, nodeTaints[i])
+	}
+
+	if !updated {
+		newTaints = append(newTaints, *taint)
+	}
+
+	newNode.Spec.Taints = newTaints
+	return newNode, true, nil
+}
+
+// semantic can do semantic deep equality checks for core objects.
+// Example: apiequality.Semantic.DeepEqual(aPod, aPodWithNonNilButEmptyMaps) == true
+// copied from pkg/apis/core/helper/helpers.go Semantic
+var semantic = conversion.EqualitiesOrDie(
+	func(a, b resource.Quantity) bool {
+		// Ignore formatting, only care that numeric value stayed the same.
+		// TODO: if we decide it's important, it should be safe to start comparing the format.
+		//
+		// Uninitialized quantities are equivalent to 0 quantities.
+		return a.Cmp(b) == 0
+	},
+	func(a, b metav1.MicroTime) bool {
+		return a.UTC() == b.UTC()
+	},
+	func(a, b metav1.Time) bool {
+		return a.UTC() == b.UTC()
+	},
+	func(a, b labels.Selector) bool {
+		return a.String() == b.String()
+	},
+	func(a, b fields.Selector) bool {
+		return a.String() == b.String()
+	},
+)
 
 // removeNodeTaint is for cleaning up taints temporarily added to node,
 // won't fail if target taint doesn't exist or has been removed.

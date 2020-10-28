@@ -25,8 +25,8 @@ import (
 	"runtime"
 	"time"
 
-	"k8s.io/klog"
-	"k8s.io/utils/mount"
+	"k8s.io/klog/v2"
+	"k8s.io/mount-utils"
 	utilstrings "k8s.io/utils/strings"
 
 	v1 "k8s.io/api/core/v1"
@@ -165,9 +165,12 @@ func (plugin *azureFilePlugin) ExpandVolumeDevice(
 		return oldSize, fmt.Errorf("invalid PV spec")
 	}
 	shareName := spec.PersistentVolume.Spec.AzureFile.ShareName
-	azure, err := getAzureCloudProvider(plugin.host.GetCloudProvider())
+	azure, resourceGroup, err := getAzureCloudProvider(plugin.host.GetCloudProvider())
 	if err != nil {
 		return oldSize, err
+	}
+	if spec.PersistentVolume.ObjectMeta.Annotations[resourceGroupAnnotation] != "" {
+		resourceGroup = spec.PersistentVolume.ObjectMeta.Annotations[resourceGroupAnnotation]
 	}
 
 	secretName, secretNamespace, err := getSecretNameAndNamespace(spec, spec.PersistentVolume.Spec.ClaimRef.Namespace)
@@ -175,12 +178,18 @@ func (plugin *azureFilePlugin) ExpandVolumeDevice(
 		return oldSize, err
 	}
 
-	accountName, accountKey, err := (&azureSvc{}).GetAzureCredentials(plugin.host, secretNamespace, secretName)
+	accountName, _, err := (&azureSvc{}).GetAzureCredentials(plugin.host, secretNamespace, secretName)
 	if err != nil {
 		return oldSize, err
 	}
 
-	if err := azure.ResizeFileShare(accountName, accountKey, shareName, int(volumehelpers.RoundUpToGiB(newSize))); err != nil {
+	requestGiB, err := volumehelpers.RoundUpToGiBInt(newSize)
+
+	if err != nil {
+		return oldSize, err
+	}
+
+	if err := azure.ResizeFileShare(resourceGroup, accountName, shareName, requestGiB); err != nil {
 		return oldSize, err
 	}
 
@@ -278,7 +287,8 @@ func (b *azureFileMounter) SetUpAt(dir string, mounterArgs volume.MounterArgs) e
 	source = fmt.Sprintf("%s%s%s.file.%s%s%s", osSeparator, osSeparator, accountName, getStorageEndpointSuffix(b.plugin.host.GetCloudProvider()), osSeparator, b.shareName)
 
 	if runtime.GOOS == "windows" {
-		sensitiveMountOptions = []string{fmt.Sprintf("AZURE\\%s", accountName), accountKey}
+		mountOptions = []string{fmt.Sprintf("AZURE\\%s", accountName)}
+		sensitiveMountOptions = []string{accountKey}
 	} else {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return err
@@ -294,8 +304,8 @@ func (b *azureFileMounter) SetUpAt(dir string, mounterArgs volume.MounterArgs) e
 	}
 
 	mountComplete := false
-	err = wait.Poll(5*time.Second, 10*time.Minute, func() (bool, error) {
-		err := b.mounter.MountSensitive(source, dir, "cifs", mountOptions, sensitiveMountOptions)
+	err = wait.PollImmediate(1*time.Second, 2*time.Minute, func() (bool, error) {
+		err := b.mounter.MountSensitiveWithoutSystemd(source, dir, "cifs", mountOptions, sensitiveMountOptions)
 		mountComplete = true
 		return true, err
 	})

@@ -22,7 +22,7 @@ import (
 
 	"github.com/prometheus/procfs"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 var processStartTime = NewGaugeVec(
@@ -54,7 +54,7 @@ func getProcessStart() (float64, error) {
 		return 0, err
 	}
 
-	if stat, err := p.NewStat(); err == nil {
+	if stat, err := p.Stat(); err == nil {
 		return stat.StartTime()
 	}
 	return 0, err

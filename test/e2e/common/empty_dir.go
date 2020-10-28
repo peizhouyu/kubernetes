@@ -17,7 +17,6 @@ limitations under the License.
 package common
 
 import (
-	"context"
 	"fmt"
 	"path"
 
@@ -26,7 +25,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/kubernetes/test/e2e/framework"
-	e2epod "k8s.io/kubernetes/test/e2e/framework/pod"
 	e2eskipper "k8s.io/kubernetes/test/e2e/framework/skipper"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 )
@@ -75,7 +73,7 @@ var _ = ginkgo.Describe("[sig-storage] EmptyDir volumes", func() {
 	})
 
 	/*
-		Release : v1.9
+		Release: v1.9
 		Testname: EmptyDir, medium memory, volume mode default
 		Description: A Pod created with an 'emptyDir' Volume and 'medium' as 'Memory', the volume MUST have mode set as -rwxrwxrwx and mount type set to tmpfs.
 		This test is marked LinuxOnly since Windows does not support setting specific file permissions, or the medium = 'Memory'.
@@ -85,7 +83,7 @@ var _ = ginkgo.Describe("[sig-storage] EmptyDir volumes", func() {
 	})
 
 	/*
-		Release : v1.9
+		Release: v1.9
 		Testname: EmptyDir, medium memory, volume mode 0644
 		Description: A Pod created with an 'emptyDir' Volume and 'medium' as 'Memory', the volume mode set to 0644. The volume MUST have mode -rw-r--r-- and mount type set to tmpfs and the contents MUST be readable.
 		This test is marked LinuxOnly since Windows does not support setting specific file permissions, or running as UID / GID, or the medium = 'Memory'.
@@ -95,7 +93,7 @@ var _ = ginkgo.Describe("[sig-storage] EmptyDir volumes", func() {
 	})
 
 	/*
-		Release : v1.9
+		Release: v1.9
 		Testname: EmptyDir, medium memory, volume mode 0666
 		Description: A Pod created with an 'emptyDir' Volume and 'medium' as 'Memory', the volume mode set to 0666. The volume MUST have mode -rw-rw-rw- and mount type set to tmpfs and the contents MUST be readable.
 		This test is marked LinuxOnly since Windows does not support setting specific file permissions, or running as UID / GID, or the medium = 'Memory'.
@@ -105,7 +103,7 @@ var _ = ginkgo.Describe("[sig-storage] EmptyDir volumes", func() {
 	})
 
 	/*
-		Release : v1.9
+		Release: v1.9
 		Testname: EmptyDir, medium memory, volume mode 0777
 		Description: A Pod created with an 'emptyDir' Volume and 'medium' as 'Memory', the volume mode set to 0777.  The volume MUST have mode set as -rwxrwxrwx and mount type set to tmpfs and the contents MUST be readable.
 		This test is marked LinuxOnly since Windows does not support setting specific file permissions, or running as UID / GID, or the medium = 'Memory'.
@@ -115,7 +113,7 @@ var _ = ginkgo.Describe("[sig-storage] EmptyDir volumes", func() {
 	})
 
 	/*
-		Release : v1.9
+		Release: v1.9
 		Testname: EmptyDir, medium memory, volume mode 0644, non-root user
 		Description: A Pod created with an 'emptyDir' Volume and 'medium' as 'Memory', the volume mode set to 0644. Volume is mounted into the container where container is run as a non-root user. The volume MUST have mode -rw-r--r-- and mount type set to tmpfs and the contents MUST be readable.
 		This test is marked LinuxOnly since Windows does not support setting specific file permissions, or running as UID / GID, or the medium = 'Memory'.
@@ -125,7 +123,7 @@ var _ = ginkgo.Describe("[sig-storage] EmptyDir volumes", func() {
 	})
 
 	/*
-		Release : v1.9
+		Release: v1.9
 		Testname: EmptyDir, medium memory, volume mode 0666,, non-root user
 		Description: A Pod created with an 'emptyDir' Volume and 'medium' as 'Memory', the volume mode set to 0666. Volume is mounted into the container where container is run as a non-root user. The volume MUST have mode -rw-rw-rw- and mount type set to tmpfs and the contents MUST be readable.
 		This test is marked LinuxOnly since Windows does not support setting specific file permissions, or running as UID / GID, or the medium = 'Memory'.
@@ -135,7 +133,7 @@ var _ = ginkgo.Describe("[sig-storage] EmptyDir volumes", func() {
 	})
 
 	/*
-		Release : v1.9
+		Release: v1.9
 		Testname: EmptyDir, medium memory, volume mode 0777, non-root user
 		Description: A Pod created with an 'emptyDir' Volume and 'medium' as 'Memory', the volume mode set to 0777. Volume is mounted into the container where container is run as a non-root user. The volume MUST have mode -rwxrwxrwx and mount type set to tmpfs and the contents MUST be readable.
 		This test is marked LinuxOnly since Windows does not support setting specific file permissions, or running as UID / GID, or the medium = 'Memory'.
@@ -145,7 +143,7 @@ var _ = ginkgo.Describe("[sig-storage] EmptyDir volumes", func() {
 	})
 
 	/*
-		Release : v1.9
+		Release: v1.9
 		Testname: EmptyDir, medium default, volume mode default
 		Description: A Pod created with an 'emptyDir' Volume, the volume MUST have mode set as -rwxrwxrwx and mount type set to tmpfs.
 		This test is marked LinuxOnly since Windows does not support setting specific file permissions.
@@ -155,7 +153,7 @@ var _ = ginkgo.Describe("[sig-storage] EmptyDir volumes", func() {
 	})
 
 	/*
-		Release : v1.9
+		Release: v1.9
 		Testname: EmptyDir, medium default, volume mode 0644
 		Description: A Pod created with an 'emptyDir' Volume, the volume mode set to 0644. The volume MUST have mode -rw-r--r-- and mount type set to tmpfs and the contents MUST be readable.
 		This test is marked LinuxOnly since Windows does not support setting specific file permissions, or running as UID / GID.
@@ -165,7 +163,7 @@ var _ = ginkgo.Describe("[sig-storage] EmptyDir volumes", func() {
 	})
 
 	/*
-		Release : v1.9
+		Release: v1.9
 		Testname: EmptyDir, medium default, volume mode 0666
 		Description: A Pod created with an 'emptyDir' Volume, the volume mode set to 0666. The volume MUST have mode -rw-rw-rw- and mount type set to tmpfs and the contents MUST be readable.
 		This test is marked LinuxOnly since Windows does not support setting specific file permissions, or running as UID / GID.
@@ -175,7 +173,7 @@ var _ = ginkgo.Describe("[sig-storage] EmptyDir volumes", func() {
 	})
 
 	/*
-		Release : v1.9
+		Release: v1.9
 		Testname: EmptyDir, medium default, volume mode 0777
 		Description: A Pod created with an 'emptyDir' Volume, the volume mode set to 0777.  The volume MUST have mode set as -rwxrwxrwx and mount type set to tmpfs and the contents MUST be readable.
 		This test is marked LinuxOnly since Windows does not support setting specific file permissions, or running as UID / GID.
@@ -185,7 +183,7 @@ var _ = ginkgo.Describe("[sig-storage] EmptyDir volumes", func() {
 	})
 
 	/*
-		Release : v1.9
+		Release: v1.9
 		Testname: EmptyDir, medium default, volume mode 0644
 		Description: A Pod created with an 'emptyDir' Volume, the volume mode set to 0644. Volume is mounted into the container where container is run as a non-root user. The volume MUST have mode -rw-r--r-- and mount type set to tmpfs and the contents MUST be readable.
 		This test is marked LinuxOnly since Windows does not support setting specific file permissions, or running as UID / GID.
@@ -195,7 +193,7 @@ var _ = ginkgo.Describe("[sig-storage] EmptyDir volumes", func() {
 	})
 
 	/*
-		Release : v1.9
+		Release: v1.9
 		Testname: EmptyDir, medium default, volume mode 0666
 		Description: A Pod created with an 'emptyDir' Volume, the volume mode set to 0666. Volume is mounted into the container where container is run as a non-root user. The volume MUST have mode -rw-rw-rw- and mount type set to tmpfs and the contents MUST be readable.
 		This test is marked LinuxOnly since Windows does not support setting specific file permissions, or running as UID / GID.
@@ -205,7 +203,7 @@ var _ = ginkgo.Describe("[sig-storage] EmptyDir volumes", func() {
 	})
 
 	/*
-		Release : v1.9
+		Release: v1.9
 		Testname: EmptyDir, medium default, volume mode 0777
 		Description: A Pod created with an 'emptyDir' Volume, the volume mode set to 0777. Volume is mounted into the container where container is run as a non-root user. The volume MUST have mode -rwxrwxrwx and mount type set to tmpfs and the contents MUST be readable.
 		This test is marked LinuxOnly since Windows does not support setting specific file permissions, or running as UID / GID.
@@ -215,7 +213,7 @@ var _ = ginkgo.Describe("[sig-storage] EmptyDir volumes", func() {
 	})
 
 	/*
-		Release : v1.15
+		Release: v1.15
 		Testname: EmptyDir, Shared volumes between containers
 		Description: A Pod created with an 'emptyDir' Volume, should share volumes between the containeres in the pod. The two busybox image containers shoud share the volumes mounted to the pod.
 		The main container shoud wait until the sub container drops a file, and main container acess the shared data.
@@ -278,17 +276,8 @@ var _ = ginkgo.Describe("[sig-storage] EmptyDir volumes", func() {
 			},
 		}
 
-		var err error
 		ginkgo.By("Creating Pod")
 		pod = f.PodClient().CreateSync(pod)
-
-		ginkgo.By("Waiting for the pod running")
-		err = e2epod.WaitForPodNameRunningInNamespace(f.ClientSet, pod.Name, f.Namespace.Name)
-		framework.ExpectNoError(err, "failed to deploy pod %s", pod.Name)
-
-		ginkgo.By("Geting the pod")
-		pod, err = f.PodClient().Get(context.TODO(), pod.Name, metav1.GetOptions{})
-		framework.ExpectNoError(err, "failed to get pod %s", pod.Name)
 
 		ginkgo.By("Reading file content from the nginx-container")
 		result := f.ExecShellInContainer(pod.Name, busyBoxMainContainerName, fmt.Sprintf("cat %s", busyBoxMainVolumeFilePath))

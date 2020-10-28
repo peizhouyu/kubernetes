@@ -26,9 +26,9 @@ import (
 	"runtime"
 	"strings"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
+	"k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
-	"k8s.io/utils/mount"
 	utilstrings "k8s.io/utils/strings"
 
 	v1 "k8s.io/api/core/v1"
@@ -43,6 +43,7 @@ import (
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
+	"k8s.io/kubernetes/pkg/securitycontext"
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/volume/util/types"
 	"k8s.io/kubernetes/pkg/volume/util/volumepathhandler"
@@ -113,7 +114,7 @@ func SetReady(dir string) {
 func GetSecretForPod(pod *v1.Pod, secretName string, kubeClient clientset.Interface) (map[string]string, error) {
 	secret := make(map[string]string)
 	if kubeClient == nil {
-		return secret, fmt.Errorf("Cannot get kube client")
+		return secret, fmt.Errorf("cannot get kube client")
 	}
 	secrets, err := kubeClient.CoreV1().Secrets(pod.Namespace).Get(context.TODO(), secretName, metav1.GetOptions{})
 	if err != nil {
@@ -136,7 +137,7 @@ func GetSecretForPV(secretNamespace, secretName, volumePluginName string, kubeCl
 		return secret, err
 	}
 	if secrets.Type != v1.SecretType(volumePluginName) {
-		return secret, fmt.Errorf("Cannot get secret of type %s", volumePluginName)
+		return secret, fmt.Errorf("cannot get secret of type %s", volumePluginName)
 	}
 	for name, data := range secrets.Data {
 		secret[name] = string(data)
@@ -147,11 +148,11 @@ func GetSecretForPV(secretNamespace, secretName, volumePluginName string, kubeCl
 // GetClassForVolume locates storage class by persistent volume
 func GetClassForVolume(kubeClient clientset.Interface, pv *v1.PersistentVolume) (*storage.StorageClass, error) {
 	if kubeClient == nil {
-		return nil, fmt.Errorf("Cannot get kube client")
+		return nil, fmt.Errorf("cannot get kube client")
 	}
 	className := v1helper.GetPersistentVolumeClass(pv)
 	if className == "" {
-		return nil, fmt.Errorf("Volume has no storage class")
+		return nil, fmt.Errorf("volume has no storage class")
 	}
 
 	class, err := kubeClient.StorageV1().StorageClasses().Get(context.TODO(), className, metav1.GetOptions{})
@@ -176,7 +177,7 @@ func checkVolumeNodeAffinity(pv *v1.PersistentVolume, nodeLabels map[string]stri
 		terms := pv.Spec.NodeAffinity.Required.NodeSelectorTerms
 		klog.V(10).Infof("Match for Required node selector terms %+v", terms)
 		if !v1helper.MatchNodeSelectorTerms(terms, labels.Set(nodeLabels), nil) {
-			return fmt.Errorf("No matching NodeSelectorTerms")
+			return fmt.Errorf("no matching NodeSelectorTerms")
 		}
 	}
 
@@ -240,7 +241,7 @@ func GenerateVolumeName(clusterName, pvName string, maxLength int) string {
 func GetPath(mounter volume.Mounter) (string, error) {
 	path := mounter.GetPath()
 	if path == "" {
-		return "", fmt.Errorf("Path is empty %s", reflect.TypeOf(mounter).String())
+		return "", fmt.Errorf("path is empty %s", reflect.TypeOf(mounter).String())
 	}
 	return path, nil
 }
@@ -608,6 +609,27 @@ func GetPodVolumeNames(pod *v1.Pod) (mounts sets.String, devices sets.String) {
 	return
 }
 
+// FsUserFrom returns FsUser of pod, which is determined by the runAsUser
+// attributes.
+func FsUserFrom(pod *v1.Pod) *int64 {
+	var fsUser *int64
+	// Exclude ephemeral containers because SecurityContext is not allowed.
+	podutil.VisitContainers(&pod.Spec, podutil.InitContainers|podutil.Containers, func(container *v1.Container, containerType podutil.ContainerType) bool {
+		runAsUser, ok := securitycontext.DetermineEffectiveRunAsUser(pod, container)
+		// One container doesn't specify user or there are more than one
+		// non-root UIDs.
+		if !ok || (fsUser != nil && *fsUser != *runAsUser) {
+			fsUser = nil
+			return false
+		}
+		if fsUser == nil {
+			fsUser = runAsUser
+		}
+		return true
+	})
+	return fsUser
+}
+
 // HasMountRefs checks if the given mountPath has mountRefs.
 // TODO: this is a workaround for the unmount device issue caused by gci mounter.
 // In GCI cluster, if gci mounter is used for mounting, the container started by mounter
@@ -679,4 +701,30 @@ func IsMultiAttachAllowed(volumeSpec *volume.Spec) bool {
 
 	// we don't know if it's supported or not and let the attacher fail later in cases it's not supported
 	return true
+}
+
+// IsAttachableVolume checks if the given volumeSpec is an attachable volume or not
+func IsAttachableVolume(volumeSpec *volume.Spec, volumePluginMgr *volume.VolumePluginMgr) bool {
+	attachableVolumePlugin, _ := volumePluginMgr.FindAttachablePluginBySpec(volumeSpec)
+	if attachableVolumePlugin != nil {
+		volumeAttacher, err := attachableVolumePlugin.NewAttacher()
+		if err == nil && volumeAttacher != nil {
+			return true
+		}
+	}
+
+	return false
+}
+
+// IsDeviceMountableVolume checks if the given volumeSpec is an device mountable volume or not
+func IsDeviceMountableVolume(volumeSpec *volume.Spec, volumePluginMgr *volume.VolumePluginMgr) bool {
+	deviceMountableVolumePlugin, _ := volumePluginMgr.FindDeviceMountablePluginBySpec(volumeSpec)
+	if deviceMountableVolumePlugin != nil {
+		volumeDeviceMounter, err := deviceMountableVolumePlugin.NewDeviceMounter()
+		if err == nil && volumeDeviceMounter != nil {
+			return true
+		}
+	}
+
+	return false
 }

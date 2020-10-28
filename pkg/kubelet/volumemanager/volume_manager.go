@@ -24,8 +24,8 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/klog"
-	"k8s.io/utils/mount"
+	"k8s.io/klog/v2"
+	"k8s.io/mount-utils"
 
 	v1 "k8s.io/api/core/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
@@ -193,7 +193,8 @@ func NewVolumeManager(
 		kubeContainerRuntime,
 		keepTerminatedPodVolumes,
 		csiMigratedPluginManager,
-		intreeToCSITranslator)
+		intreeToCSITranslator,
+		volumePluginMgr)
 	vm.reconciler = reconciler.NewReconciler(
 		kubeClient,
 		controllerAttachDetachEnabled,

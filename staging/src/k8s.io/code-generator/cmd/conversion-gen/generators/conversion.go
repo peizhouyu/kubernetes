@@ -30,9 +30,10 @@ import (
 	"k8s.io/gengo/namer"
 	"k8s.io/gengo/types"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	conversionargs "k8s.io/code-generator/cmd/conversion-gen/args"
+	genutil "k8s.io/code-generator/pkg/util"
 )
 
 // These are the comment tags that carry parameters for conversion generation.
@@ -292,14 +293,8 @@ func Packages(context *generator.Context, arguments *args.GeneratorArgs) generat
 		// in the output directory.
 		// TODO: build a more fundamental concept in gengo for dealing with modifications
 		// to vendored packages.
-		vendorless := func(pkg string) string {
-			if pos := strings.LastIndex(pkg, "/vendor/"); pos != -1 {
-				return pkg[pos+len("/vendor/"):]
-			}
-			return pkg
-		}
 		for i := range peerPkgs {
-			peerPkgs[i] = vendorless(peerPkgs[i])
+			peerPkgs[i] = genutil.Vendorless(peerPkgs[i])
 		}
 
 		// Make sure our peer-packages are added and fully parsed.
@@ -638,7 +633,7 @@ func (g *genConversion) preexists(inType, outType *types.Type) (*types.Type, boo
 }
 
 func (g *genConversion) Init(c *generator.Context, w io.Writer) error {
-	if klog.V(5) {
+	if klog.V(5).Enabled() {
 		if m, ok := g.useUnsafe.(equalMemoryTypes); ok {
 			var result []string
 			klog.Infof("All objects without identical memory layout:")

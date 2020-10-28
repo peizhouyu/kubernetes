@@ -23,6 +23,8 @@ import (
 
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:prerelease-lifecycle-gen:introduced=1.16
+// +k8s:prerelease-lifecycle-gen:deprecated=1.22
 
 // EndpointSlice represents a subset of the endpoints that implement a service.
 // For a given service there may be multiple EndpointSlice objects, selected by
@@ -86,8 +88,8 @@ type Endpoint struct {
 	// hostname of this endpoint. This field may be used by consumers of
 	// endpoints to distinguish endpoints from each other (e.g. in DNS names).
 	// Multiple endpoints which use the same hostname should be considered
-	// fungible (e.g. multiple A values in DNS). Must pass DNS Label (RFC 1123)
-	// validation.
+	// fungible (e.g. multiple A values in DNS). Must be lowercase and pass DNS
+	// Label (RFC 1123) validation.
 	// +optional
 	Hostname *string `json:"hostname,omitempty" protobuf:"bytes,3,opt,name=hostname"`
 	// targetRef is a reference to a Kubernetes object that represents this
@@ -150,6 +152,8 @@ type EndpointPort struct {
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:prerelease-lifecycle-gen:introduced=1.16
+// +k8s:prerelease-lifecycle-gen:deprecated=1.22
 
 // EndpointSliceList represents a list of endpoint slices
 type EndpointSliceList struct {

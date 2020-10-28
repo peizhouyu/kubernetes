@@ -57,7 +57,23 @@ type NodeResourcesFitArgs struct {
 	// IgnoredResources is the list of resources that NodeResources fit filter
 	// should ignore.
 	IgnoredResources []string
+	// IgnoredResourceGroups defines the list of resource groups that NodeResources fit filter should ignore.
+	// e.g. if group is ["example.com"], it will ignore all resource names that begin
+	// with "example.com", such as "example.com/aaa" and "example.com/bbb".
+	// A resource group name can't contain '/'.
+	IgnoredResourceGroups []string
 }
+
+// PodTopologySpreadConstraintsDefaulting defines how to set default constraints
+// for the PodTopologySpread plugin.
+type PodTopologySpreadConstraintsDefaulting string
+
+const (
+	// SystemDefaulting instructs to use the kubernetes defined default.
+	SystemDefaulting PodTopologySpreadConstraintsDefaulting = "System"
+	// ListDefaulting instructs to use the config provided default.
+	ListDefaulting PodTopologySpreadConstraintsDefaulting = "List"
+)
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
@@ -66,12 +82,24 @@ type PodTopologySpreadArgs struct {
 	metav1.TypeMeta
 
 	// DefaultConstraints defines topology spread constraints to be applied to
-	// pods that don't define any in `pod.spec.topologySpreadConstraints`.
-	// `topologySpreadConstraint.labelSelectors` must be empty, as they are
-	// deduced the pods' membership to Services, Replication Controllers, Replica
-	// Sets or Stateful Sets.
-	// Empty by default.
+	// Pods that don't define any in `pod.spec.topologySpreadConstraints`.
+	// `.defaultConstraints[*].labelSelectors` must be empty, as they are
+	// deduced from the Pod's membership to Services, ReplicationControllers,
+	// ReplicaSets or StatefulSets.
+	// When not empty, .defaultingType must be "List".
 	DefaultConstraints []v1.TopologySpreadConstraint
+
+	// DefaultingType determines how .defaultConstraints are deduced. Can be one
+	// of "System" or "List".
+	//
+	// - "System": Use kubernetes defined constraints that spread Pods among
+	//   Nodes and Zones.
+	// - "List": Use constraints defined in .defaultConstraints.
+	//
+	// Defaults to "List" if feature gate DefaultPodTopologySpread is disabled
+	// and to "System" if enabled.
+	// +optional
+	DefaultingType PodTopologySpreadConstraintsDefaulting
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -82,7 +110,33 @@ type RequestedToCapacityRatioArgs struct {
 
 	// Points defining priority function shape
 	Shape []UtilizationShapePoint
-	// Resources to be managed
+	// Resources to be considered when scoring.
+	// The default resource set includes "cpu" and "memory" with an equal weight.
+	// Allowed weights go from 1 to 100.
+	Resources []ResourceSpec
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// NodeResourcesLeastAllocatedArgs holds arguments used to configure NodeResourcesLeastAllocated plugin.
+type NodeResourcesLeastAllocatedArgs struct {
+	metav1.TypeMeta
+
+	// Resources to be considered when scoring.
+	// The default resource set includes "cpu" and "memory" with an equal weight.
+	// Allowed weights go from 1 to 100.
+	Resources []ResourceSpec
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// NodeResourcesMostAllocatedArgs holds arguments used to configure NodeResourcesMostAllocated plugin.
+type NodeResourcesMostAllocatedArgs struct {
+	metav1.TypeMeta
+
+	// Resources to be considered when scoring.
+	// The default resource set includes "cpu" and "memory" with an equal weight.
+	// Allowed weights go from 1 to 100.
 	Resources []ResourceSpec
 }
 
@@ -94,9 +148,9 @@ type UtilizationShapePoint struct {
 	Score int32
 }
 
-// ResourceSpec represents single resource for bin packing of priority RequestedToCapacityRatioArgs.
+// ResourceSpec represents single resource.
 type ResourceSpec struct {
-	// Name of the resource to be managed by RequestedToCapacityRatio function.
+	// Name of the resource.
 	Name string
 	// Weight of the resource.
 	Weight int64
@@ -114,4 +168,16 @@ type ServiceAffinityArgs struct {
 	AffinityLabels []string
 	// AntiAffinityLabelsPreference are the labels to consider for service anti affinity scoring.
 	AntiAffinityLabelsPreference []string
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// VolumeBindingArgs holds arguments used to configure the VolumeBinding plugin.
+type VolumeBindingArgs struct {
+	metav1.TypeMeta
+
+	// BindTimeoutSeconds is the timeout in seconds in volume binding operation.
+	// Value must be non-negative integer. The value zero indicates no waiting.
+	// If this value is nil, the default value will be used.
+	BindTimeoutSeconds int64
 }

@@ -46,7 +46,7 @@ import (
 	"k8s.io/apiserver/pkg/features"
 	"k8s.io/apiserver/pkg/registry/rest"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // RequestScope encapsulates common fields across all RESTful handler methods.
@@ -328,6 +328,12 @@ func checkName(obj runtime.Object, name, namespace string, namer ScopeNamer) err
 //   interfaces
 func setObjectSelfLink(ctx context.Context, obj runtime.Object, req *http.Request, namer ScopeNamer) error {
 	if utilfeature.DefaultFeatureGate.Enabled(features.RemoveSelfLink) {
+		// Ensure that for empty lists we don't return <nil> items.
+		if meta.IsListType(obj) && meta.LenList(obj) == 0 {
+			if err := meta.SetList(obj, []runtime.Object{}); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 
