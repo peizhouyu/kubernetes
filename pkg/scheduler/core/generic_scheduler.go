@@ -154,12 +154,14 @@ func (g *genericScheduler) Schedule(ctx context.Context, prof *profile.Profile, 
 	}
 
 	startPredicateEvalTime := time.Now()
+	//todo 获取可用的node列表 feasibleNodes
 	feasibleNodes, filteredNodesStatuses, err := g.findNodesThatFitPod(ctx, prof, state, pod)
 	if err != nil {
 		return result, err
 	}
 	trace.Step("Computing predicates done")
 
+	//todo 没有可用的 node 直接 return
 	if len(feasibleNodes) == 0 {
 		return result, &FitError{
 			Pod:                   pod,
@@ -173,6 +175,7 @@ func (g *genericScheduler) Schedule(ctx context.Context, prof *profile.Profile, 
 
 	startPriorityEvalTime := time.Now()
 	// When only one node after predicate, just use it.
+	//todo 只有一个可用 node
 	if len(feasibleNodes) == 1 {
 		metrics.DeprecatedSchedulingAlgorithmPriorityEvaluationSecondsDuration.Observe(metrics.SinceInSeconds(startPriorityEvalTime))
 		return ScheduleResult{
@@ -182,6 +185,7 @@ func (g *genericScheduler) Schedule(ctx context.Context, prof *profile.Profile, 
 		}, nil
 	}
 
+	// todo 分别算出每个可用 node 的 Score 返回的是 Slice NodeScoreList  priorityList {[Name, Score],[Name ,Score]}
 	priorityList, err := g.prioritizeNodes(ctx, prof, state, pod, feasibleNodes)
 	if err != nil {
 		return result, err
@@ -190,6 +194,7 @@ func (g *genericScheduler) Schedule(ctx context.Context, prof *profile.Profile, 
 	metrics.DeprecatedSchedulingAlgorithmPriorityEvaluationSecondsDuration.Observe(metrics.SinceInSeconds(startPriorityEvalTime))
 	metrics.DeprecatedSchedulingDuration.WithLabelValues(metrics.PriorityEvaluation).Observe(metrics.SinceInSeconds(startPriorityEvalTime))
 
+	// todo 选出最优解
 	host, err := g.selectHost(priorityList)
 	trace.Step("Prioritizing done")
 
