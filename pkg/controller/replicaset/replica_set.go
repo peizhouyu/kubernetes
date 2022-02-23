@@ -514,6 +514,7 @@ func (rsc *ReplicaSetController) deletePod(obj interface{}) {
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
 func (rsc *ReplicaSetController) worker(ctx context.Context) {
+	// 正常执行 rsc.processNextWorkItem(ctx) 结果都是 true 一直在循环处理
 	for rsc.processNextWorkItem(ctx) {
 	}
 }
@@ -651,10 +652,12 @@ func (rsc *ReplicaSetController) syncReplicaSet(ctx context.Context, key string)
 		klog.V(4).Infof("Finished syncing %v %q (%v)", rsc.Kind, key, time.Since(startTime))
 	}()
 
+	// 解析key namespace/name or name
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
 	}
+	// 获取key对应的 ReplicaSet 对象
 	rs, err := rsc.rsLister.ReplicaSets(namespace).Get(name)
 	if apierrors.IsNotFound(err) {
 		klog.V(4).Infof("%v %v has been deleted", rsc.Kind, key)
@@ -666,6 +669,7 @@ func (rsc *ReplicaSetController) syncReplicaSet(ctx context.Context, key string)
 	}
 
 	rsNeedsSync := rsc.expectations.SatisfiedExpectations(key)
+	// 根据label构造selector
 	selector, err := metav1.LabelSelectorAsSelector(rs.Spec.Selector)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("error converting pod selector to selector for rs %v/%v: %v", namespace, name, err))
@@ -675,11 +679,13 @@ func (rsc *ReplicaSetController) syncReplicaSet(ctx context.Context, key string)
 	// list all pods to include the pods that don't match the rs`s selector
 	// anymore but has the stale controller ref.
 	// TODO: Do the List and Filter in a single pass, or use an index.
+	// 列出 namespace 下的所有 Pod ？
 	allPods, err := rsc.podLister.Pods(rs.Namespace).List(labels.Everything())
 	if err != nil {
 		return err
 	}
 	// Ignore inactive pods.
+	// 下面有个 IsPodActive() 方法检查 列表里 pod的Status.Phase 排除 PodSucceeded PodFailed 和 已经标注删除的DeletionTimestamp
 	filteredPods := controller.FilterActivePods(allPods)
 
 	// NOTE: filteredPods are pointing to objects from cache - if you need to

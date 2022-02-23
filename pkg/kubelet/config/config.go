@@ -158,6 +158,7 @@ func (s *podStorage) Merge(source string, change interface{}) error {
 
 	// deliver update notifications
 	switch s.mode {
+	// 默认为 PodConfigNotificationIncremental 后面两种可以忽略
 	case PodConfigNotificationIncremental:
 		if len(removes.Pods) > 0 {
 			s.updates <- *removes
@@ -226,12 +227,14 @@ func (s *podStorage) merge(source string, change interface{}) (adds, updates, de
 	// After updated, new pod will be stored in the pod cache *pods*.
 	// Notice that *pods* and *oldPods* could be the same cache.
 	updatePodsFunc := func(newPods []*v1.Pod, oldPods, pods map[types.UID]*v1.Pod) {
+		// PodFullName 去重
 		filtered := filterInvalidPods(newPods, source, s.recorder)
 		for _, ref := range filtered {
 			// Annotate the pod with the source before any comparison.
 			if ref.Annotations == nil {
 				ref.Annotations = make(map[string]string)
 			}
+			// pod Annotations[kubernetes.io/config.source] = [file http api]
 			ref.Annotations[kubetypes.ConfigSourceAnnotationKey] = source
 			if existing, found := oldPods[ref.UID]; found {
 				pods[ref.UID] = existing

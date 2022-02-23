@@ -61,6 +61,7 @@ func (kl *Kubelet) registerWithAPIServer() {
 			step = 7 * time.Second
 		}
 
+		// 获取当前node 物理机的各种详细属性 （node对象包含这些属性）
 		node, err := kl.initialNode(context.TODO())
 		if err != nil {
 			klog.ErrorS(err, "Unable to construct v1.Node object for kubelet")
@@ -439,10 +440,12 @@ func (kl *Kubelet) syncNodeStatus() {
 	if kl.kubeClient == nil || kl.heartbeatClient == nil {
 		return
 	}
+	//是否是第一次上报 第一次为注册 后续不会执行
 	if kl.registerNode {
 		// This will exit immediately if it doesn't need to do anything.
 		kl.registerWithAPIServer()
 	}
+	//默认的定期上报状态方法 syncNodeStatus() 会被外层定时器定时调用
 	if err := kl.updateNodeStatus(); err != nil {
 		klog.ErrorS(err, "Unable to update node status")
 	}
@@ -452,6 +455,7 @@ func (kl *Kubelet) syncNodeStatus() {
 // change or enough time passed from the last sync.
 func (kl *Kubelet) updateNodeStatus() error {
 	klog.V(5).InfoS("Updating node status")
+	//nodeStatusUpdateRetry 状态上报决定重试次数 默认 5
 	for i := 0; i < nodeStatusUpdateRetry; i++ {
 		if err := kl.tryUpdateNodeStatus(i); err != nil {
 			if i > 0 && kl.onRepeatedHeartbeatFailure != nil {
@@ -478,6 +482,7 @@ func (kl *Kubelet) tryUpdateNodeStatus(tryNumber int) error {
 	if tryNumber == 0 {
 		util.FromApiserverCache(&opts)
 	}
+	// 先会get请求拿node状态（一般是缓存不会直接到Etcd）后面来判断变更信息 应该是请求本地？
 	node, err := kl.heartbeatClient.CoreV1().Nodes().Get(context.TODO(), string(kl.nodeName), opts)
 	if err != nil {
 		return fmt.Errorf("error getting node %q: %v", kl.nodeName, err)
@@ -518,6 +523,7 @@ func (kl *Kubelet) tryUpdateNodeStatus(tryNumber int) error {
 		areRequiredLabelsNotPresent = true
 	}
 
+	//设置状态
 	kl.setNodeStatus(node)
 
 	now := kl.clock.Now()
@@ -545,6 +551,7 @@ func (kl *Kubelet) tryUpdateNodeStatus(tryNumber int) error {
 	}
 
 	// Patch the current status on the API server
+	//patch更新状态到 api server
 	updatedNode, _, err := nodeutil.PatchNodeStatus(kl.heartbeatClient.CoreV1(), types.NodeName(kl.nodeName), originalNode, node)
 	if err != nil {
 		return err

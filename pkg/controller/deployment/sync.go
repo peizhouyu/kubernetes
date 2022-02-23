@@ -117,6 +117,8 @@ func (dc *DeploymentController) getAllReplicaSetsAndSyncRevision(ctx context.Con
 	_, allOldRSs := deploymentutil.FindOldReplicaSets(d, rsList)
 
 	// Get new replica set with the updated revision number
+	// 获取新的 replicaSet
+	// newRS 可能是不存在的 例如 新建的Deployment
 	newRS, err := dc.getNewReplicaSet(ctx, d, rsList, allOldRSs, createIfNotExisted)
 	if err != nil {
 		return nil, nil, err
@@ -399,6 +401,7 @@ func (dc *DeploymentController) scaleReplicaSetAndRecordEvent(ctx context.Contex
 		return false, rs, nil
 	}
 	var scalingOperation string
+	// 根据新传入的 scale 判断 up or down
 	if *(rs.Spec.Replicas) < newScale {
 		scalingOperation = "up"
 	} else {
@@ -419,6 +422,9 @@ func (dc *DeploymentController) scaleReplicaSet(ctx context.Context, rs *apps.Re
 	if sizeNeedsUpdate || annotationsNeedUpdate {
 		rsCopy := rs.DeepCopy()
 		*(rsCopy.Spec.Replicas) = newScale
+		// 设置Annotations中需要的副本数属性 [DesiredReplicasAnnotation] 然后使用client(client go)更新到 apiServer
+		// 这里其实已经说明 k8s内部 controller 其实就是通过 Annotation 属性来执行扩缩容参数传递的
+		// 我们在写 CRD + controller 的时候 也是使用 Annotation 存储一些关键信息
 		deploymentutil.SetReplicasAnnotations(rsCopy, *(deployment.Spec.Replicas), *(deployment.Spec.Replicas)+deploymentutil.MaxSurge(*deployment))
 		rs, err = dc.client.AppsV1().ReplicaSets(rsCopy.Namespace).Update(ctx, rsCopy, metav1.UpdateOptions{})
 		if err == nil && sizeNeedsUpdate {

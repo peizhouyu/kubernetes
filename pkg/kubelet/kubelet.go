@@ -264,17 +264,21 @@ func makePodSourceConfig(kubeCfg *kubeletconfiginternal.KubeletConfiguration, ku
 	ctx := context.TODO()
 
 	// define file config source
+	// 获取POD的三种方式
+	// 读path下的yaml文件创建静态 pod
 	if kubeCfg.StaticPodPath != "" {
 		klog.InfoS("Adding static pod path", "path", kubeCfg.StaticPodPath)
 		config.NewSourceFile(kubeCfg.StaticPodPath, nodeName, kubeCfg.FileCheckFrequency.Duration, cfg.Channel(ctx, kubetypes.FileSource))
 	}
 
 	// define url config source
+	// 读HTTP URL
 	if kubeCfg.StaticPodURL != "" {
 		klog.InfoS("Adding pod URL with HTTP header", "URL", kubeCfg.StaticPodURL, "header", manifestURLHeader)
 		config.NewSourceURL(kubeCfg.StaticPodURL, manifestURLHeader, nodeName, kubeCfg.HTTPCheckFrequency.Duration, cfg.Channel(ctx, kubetypes.HTTPSource))
 	}
 
+	// LW apiServer
 	if kubeDeps.KubeClient != nil {
 		klog.InfoS("Adding apiserver pod source")
 		config.NewSourceApiserver(kubeDeps.KubeClient, nodeName, nodeHasSynced, cfg.Channel(ctx, kubetypes.ApiserverSource))
@@ -1444,6 +1448,7 @@ func (kl *Kubelet) Run(updates <-chan kubetypes.PodUpdate) {
 		// Introduce some small jittering to ensure that over time the requests won't start
 		// accumulating at approximately the same time from the set of nodes due to priority and
 		// fairness effect.
+		// kubelet 启动参数 nodeStatusUpdateFrequency 决定定时上报时间间隔 默认10s
 		go wait.JitterUntil(kl.syncNodeStatus, kl.nodeStatusUpdateFrequency, 0.04, true, wait.NeverStop)
 		go kl.fastStatusUpdateOnce()
 
@@ -2027,6 +2032,8 @@ func (kl *Kubelet) syncLoop(updates <-chan kubetypes.PodUpdate, handler SyncHand
 func (kl *Kubelet) syncLoopIteration(configCh <-chan kubetypes.PodUpdate, handler SyncHandler,
 	syncCh <-chan time.Time, housekeepingCh <-chan time.Time, plegCh <-chan *pleg.PodLifecycleEvent) bool {
 	select {
+	// 将配置更改的POD分派到相应的事件类型的处理程序回调处理
+	// 主要监听来自apiserver、file和http的变更
 	case u, open := <-configCh:
 		// Update from a config source; dispatch it to the right handler
 		// callback.
@@ -2065,6 +2072,8 @@ func (kl *Kubelet) syncLoopIteration(configCh <-chan kubetypes.PodUpdate, handle
 
 		kl.sourcesReady.AddSource(u.Source)
 
+		// pleg产生的pod状态变化的event
+		// 生命周期内的事件也在这里处理
 	case e := <-plegCh:
 		if e.Type == pleg.ContainerStarted {
 			// record the most recent time we observed a container start for this pod.
@@ -2088,6 +2097,7 @@ func (kl *Kubelet) syncLoopIteration(configCh <-chan kubetypes.PodUpdate, handle
 				kl.cleanUpContainersInPod(e.ID, containerID)
 			}
 		}
+		// 处理等待sync的pod
 	case <-syncCh:
 		// Sync pods waiting for sync
 		podsToSync := kl.getPodsToSync()
@@ -2096,12 +2106,16 @@ func (kl *Kubelet) syncLoopIteration(configCh <-chan kubetypes.PodUpdate, handle
 		}
 		klog.V(4).InfoS("SyncLoop (SYNC) pods", "total", len(podsToSync), "pods", klog.KObjs(podsToSync))
 		handler.HandlePodSyncs(podsToSync)
+		// 三种探针失败检测
 	case update := <-kl.livenessManager.Updates():
 		if update.Result == proberesults.Failure {
+			// liveness 失败重新进行 sync
 			handleProbeSync(kl, update, handler, "liveness", "unhealthy")
 		}
+		// 对于 readinessProbe 只关注 Success 事件
 	case update := <-kl.readinessManager.Updates():
 		ready := update.Result == proberesults.Success
+		// 更新对应的业务 container state 为可用
 		kl.statusManager.SetContainerReadiness(update.PodUID, update.ContainerID, ready)
 
 		status := ""
@@ -2118,6 +2132,7 @@ func (kl *Kubelet) syncLoopIteration(configCh <-chan kubetypes.PodUpdate, handle
 			status = "started"
 		}
 		handleProbeSync(kl, update, handler, "startup", status)
+		// 触发清理pod的
 	case <-housekeepingCh:
 		if !kl.sourcesReady.AllReady() {
 			// If the sources aren't ready or volume manager has not yet synced the states,

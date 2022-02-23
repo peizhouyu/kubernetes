@@ -60,6 +60,7 @@ func startStatefulSetController(ctx context.Context, controllerContext Controlle
 	return nil, true, nil
 }
 
+// 启动 ReplicaSetController 相关逻辑 先构造 ReplicaSetController 然后执行
 func startReplicaSetController(ctx context.Context, controllerContext ControllerContext) (controller.Interface, bool, error) {
 	go replicaset.NewReplicaSetController(
 		controllerContext.InformerFactory.Apps().V1().ReplicaSets(),
@@ -70,6 +71,7 @@ func startReplicaSetController(ctx context.Context, controllerContext Controller
 	return nil, true, nil
 }
 
+// 启动 DeploymentController 相关逻辑 先构造DeploymentController 然后执行
 func startDeploymentController(ctx context.Context, controllerContext ControllerContext) (controller.Interface, bool, error) {
 	dc, err := deployment.NewDeploymentController(
 		controllerContext.InformerFactory.Apps().V1().Deployments(),

@@ -385,6 +385,7 @@ func (s *GenericAPIServer) PrepareRun() preparedGenericAPIServer {
 
 // Run spawns the secure http server. It only returns if stopCh is closed
 // or the secure port cannot be listened on initially.
+//启动 api server - http server
 func (s preparedGenericAPIServer) Run(stopCh <-chan struct{}) error {
 	delayedStopCh := s.lifecycleSignals.AfterShutdownDelayDuration
 	shutdownInitiatedCh := s.lifecycleSignals.ShutdownInitiated
@@ -402,6 +403,7 @@ func (s preparedGenericAPIServer) Run(stopCh <-chan struct{}) error {
 				return
 			}
 		}
+		//注册信号监听
 		s.lifecycleSignals.MuxAndDiscoveryComplete.Signal()
 		klog.V(1).Infof("%s has all endpoints registered and discovery information is complete", s.lifecycleSignals.MuxAndDiscoveryComplete.Name())
 	}()

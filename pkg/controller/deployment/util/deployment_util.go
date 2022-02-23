@@ -611,6 +611,7 @@ func EqualIgnoreHash(template1, template2 *v1.PodTemplateSpec) bool {
 func FindNewReplicaSet(deployment *apps.Deployment, rsList []*apps.ReplicaSet) *apps.ReplicaSet {
 	sort.Sort(controller.ReplicaSetsByCreationTimestamp(rsList))
 	for i := range rsList {
+		// 和当前的 Deployment Template 相同被认为是新 Deployment 对应的 ReplicaSet
 		if EqualIgnoreHash(&rsList[i].Spec.Template, &deployment.Spec.Template) {
 			// In rare cases, such as after cluster upgrades, Deployment may end up with
 			// having more than one new ReplicaSets that have the same template as its template,
@@ -628,9 +629,11 @@ func FindNewReplicaSet(deployment *apps.Deployment, rsList []*apps.ReplicaSet) *
 func FindOldReplicaSets(deployment *apps.Deployment, rsList []*apps.ReplicaSet) ([]*apps.ReplicaSet, []*apps.ReplicaSet) {
 	var requiredRSs []*apps.ReplicaSet
 	var allRSs []*apps.ReplicaSet
+	// newRS 可能是不存在的 例如 新建的Deployment
 	newRS := FindNewReplicaSet(deployment, rsList)
 	for _, rs := range rsList {
 		// Filter out new replica set
+		// 过滤新的 replicaSet 剩下的就是old
 		if newRS != nil && rs.UID == newRS.UID {
 			continue
 		}

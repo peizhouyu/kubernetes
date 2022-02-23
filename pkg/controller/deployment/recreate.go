@@ -32,10 +32,13 @@ func (dc *DeploymentController) rolloutRecreate(ctx context.Context, d *apps.Dep
 	if err != nil {
 		return err
 	}
+
+	//oldRSs中加入newRS 注意 oldRSs是一个结构体切片 append第一个参数是需要添加元素的结构体
 	allRSs := append(oldRSs, newRS)
 	activeOldRSs := controller.FilterActiveReplicaSets(oldRSs)
 
 	// scale down old replica sets.
+	// 停止旧的ReplicaSet的副本
 	scaledDown, err := dc.scaleDownOldReplicaSetsForRecreate(ctx, activeOldRSs, d)
 	if err != nil {
 		return err
@@ -46,11 +49,13 @@ func (dc *DeploymentController) rolloutRecreate(ctx context.Context, d *apps.Dep
 	}
 
 	// Do not process a deployment when it has old pods running.
+	// 等在 old pods 停止
 	if oldPodsRunning(newRS, oldRSs, podMap) {
 		return dc.syncRolloutStatus(ctx, allRSs, newRS, d)
 	}
 
 	// If we need to create a new RS, create it now.
+	// new RS 按理说在 getAllReplicaSetsAndSyncRevision 已经创建
 	if newRS == nil {
 		newRS, oldRSs, err = dc.getAllReplicaSetsAndSyncRevision(ctx, d, rsList, true)
 		if err != nil {
@@ -60,6 +65,8 @@ func (dc *DeploymentController) rolloutRecreate(ctx context.Context, d *apps.Dep
 	}
 
 	// scale up new replica set.
+	// 通过设置在 Annotation 中的参数 回写到 apiServer 实现调整
+	// 事实上只是完成 Deployment controller的使命 后续由别的controller来继续
 	if _, err := dc.scaleUpNewReplicaSetForRecreate(ctx, newRS, d); err != nil {
 		return err
 	}
@@ -71,18 +78,21 @@ func (dc *DeploymentController) rolloutRecreate(ctx context.Context, d *apps.Dep
 	}
 
 	// Sync deployment status.
+	// 完成后同步状态
 	return dc.syncRolloutStatus(ctx, allRSs, newRS, d)
 }
 
 // scaleDownOldReplicaSetsForRecreate scales down old replica sets when deployment strategy is "Recreate".
 func (dc *DeploymentController) scaleDownOldReplicaSetsForRecreate(ctx context.Context, oldRSs []*apps.ReplicaSet, deployment *apps.Deployment) (bool, error) {
 	scaled := false
+	// 遍历旧的副本集
 	for i := range oldRSs {
 		rs := oldRSs[i]
 		// Scaling not required.
 		if *(rs.Spec.Replicas) == 0 {
 			continue
 		}
+		// 因为需要清除全部的pod 第三个参数 传入0
 		scaledRS, updatedRS, err := dc.scaleReplicaSetAndRecordEvent(ctx, rs, 0, deployment)
 		if err != nil {
 			return false, err

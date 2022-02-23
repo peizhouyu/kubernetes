@@ -469,6 +469,7 @@ func (dc *DeploymentController) processNextWorkItem(ctx context.Context) bool {
 	}
 	defer dc.queue.Done(key)
 
+	// 这个 syncHandler 其实是 syncDeployment 上文中new的时候有赋值 dc.syncHandler = dc.syncDeployment
 	err := dc.syncHandler(ctx, key.(string))
 	dc.handleErr(err, key)
 
@@ -566,6 +567,7 @@ func (dc *DeploymentController) getPodMapForDeployment(d *apps.Deployment, rsLis
 // syncDeployment will sync the deployment with the given key.
 // This function is not meant to be invoked concurrently with the same key.
 func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) error {
+	// key: namespace/deploymentName | deploymentName
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
@@ -578,6 +580,7 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 		klog.V(4).InfoS("Finished syncing deployment", "deployment", klog.KRef(namespace, name), "duration", time.Since(startTime))
 	}()
 
+	// 根据deploymentInformer 的dLister获取这个ns中这个name的dep，如果没有找到说明这个dep已经被删除了
 	deployment, err := dc.dLister.Deployments(namespace).Get(name)
 	if errors.IsNotFound(err) {
 		klog.V(2).InfoS("Deployment has been deleted", "deployment", klog.KRef(namespace, name))
@@ -603,6 +606,8 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 
 	// List ReplicaSets owned by this Deployment, while reconciling ControllerRef
 	// through adoption/orphaning.
+	// 获取当前Deployment对应的 所有 replicaSet 的集合有随着更新创建的也有旧的(如果之前Deployment存在的话)
+	// 注意 rsList 是所有的集合 后面会区分筛选 new or old ReplicaSet
 	rsList, err := dc.getReplicaSetsForDeployment(ctx, d)
 	if err != nil {
 		return err
@@ -612,6 +617,7 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 	//
 	// * check if a Pod is labeled correctly with the pod-template-hash label.
 	// * check that no old Pods are running in the middle of Recreate Deployments.
+	// 获取当前Deployment对应的 pod
 	podMap, err := dc.getPodMapForDeployment(d, rsList)
 	if err != nil {
 		return err
@@ -639,6 +645,7 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 		return dc.rollback(ctx, d, rsList)
 	}
 
+	// 判断是是否是扩缩容 是的话直接处理并返回
 	scalingEvent, err := dc.isScalingEvent(ctx, d, rsList)
 	if err != nil {
 		return err
@@ -648,8 +655,10 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 	}
 
 	switch d.Spec.Strategy.Type {
+	// 重新创建 先删除所有旧的pod
 	case apps.RecreateDeploymentStrategyType:
 		return dc.rolloutRecreate(ctx, d, rsList, podMap)
+	// 滚动更新
 	case apps.RollingUpdateDeploymentStrategyType:
 		return dc.rolloutRolling(ctx, d, rsList)
 	}

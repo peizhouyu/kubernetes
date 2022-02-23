@@ -206,17 +206,21 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 
 	saTokenControllerInitFunc := serviceAccountTokenControllerStarter{rootClientBuilder: rootClientBuilder}.startServiceAccountTokenController
 
+	// 选举获取 leader 调用声明的 run 方法启动 controller
 	run := func(ctx context.Context, startSATokenController InitFunc, initializersFunc ControllerInitializersFunc) {
 
 		controllerContext, err := CreateControllerContext(c, rootClientBuilder, clientBuilder, ctx.Done())
 		if err != nil {
 			klog.Fatalf("error building controller context: %v", err)
 		}
+		// 返回需要执行的所有 controller 列表 map里包含所有需要执行的controller传递给StartControllers()方法 eg. apps.startDeploymentController()
 		controllerInitializers := initializersFunc(controllerContext.LoopMode)
+		// 启动命令
 		if err := StartControllers(ctx, controllerContext, startSATokenController, controllerInitializers, unsecuredMux, healthzHandler); err != nil {
 			klog.Fatalf("error starting controllers: %v", err)
 		}
 
+		// 启动 Informer
 		controllerContext.InformerFactory.Start(stopCh)
 		controllerContext.ObjectOrMetadataInformerFactory.Start(stopCh)
 		close(controllerContext.InformersStarted)
@@ -539,13 +543,17 @@ func StartControllers(ctx context.Context, controllerCtx ControllerContext, star
 
 	// Initialize the cloud provider with a reference to the clientBuilder only after token controller
 	// has started in case the cloud provider uses the client builder.
+	// 预留调用云供应商接口 初始化自定义插件 不用过多关心
 	if controllerCtx.Cloud != nil {
 		controllerCtx.Cloud.Initialize(controllerCtx.ClientBuilder, ctx.Done())
 	}
 
 	var controllerChecks []healthz.HealthChecker
 
+	// 遍历所有处理 controllers
+	// key 是string的controllerName value [initFn]对应的是该controller的启动方法
 	for controllerName, initFn := range controllers {
+		// 判断各个controller是否在禁用别表 有个 ControllersDisabledByDefault
 		if !controllerCtx.IsControllerEnabled(controllerName) {
 			klog.Warningf("%q is disabled", controllerName)
 			continue
@@ -554,6 +562,7 @@ func StartControllers(ctx context.Context, controllerCtx ControllerContext, star
 		time.Sleep(wait.Jitter(controllerCtx.ComponentConfig.Generic.ControllerStartInterval.Duration, ControllerStartJitter))
 
 		klog.V(1).Infof("Starting %q", controllerName)
+		// 启动对应的 controller  initFn 就是对应controller的启动方法
 		ctrl, started, err := initFn(ctx, controllerCtx)
 		if err != nil {
 			klog.Errorf("Error starting %q", controllerName)

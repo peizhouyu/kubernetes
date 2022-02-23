@@ -151,17 +151,17 @@ cluster's shared state through which all other components interact.`,
 func Run(completeOptions completedServerRunOptions, stopCh <-chan struct{}) error {
 	// To help debugging, immediately log version
 	klog.Infof("Version: %+v", version.Get())
-
+	// 创建服务链
 	server, err := CreateServerChain(completeOptions, stopCh)
 	if err != nil {
 		return err
 	}
-
+	// 预运行
 	prepared, err := server.PrepareRun()
 	if err != nil {
 		return err
 	}
-
+	// 正式运行
 	return prepared.Run(stopCh)
 }
 
