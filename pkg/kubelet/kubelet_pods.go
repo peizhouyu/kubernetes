@@ -1102,6 +1102,7 @@ func (kl *Kubelet) HandlePodCleanups() error {
 	}
 
 	// Stop probing pods that are not running
+	// 只是停止探针 这里传入runningPods是作为反向过滤条件 即pod不在runningPods列表中就可以被清理
 	klog.V(3).InfoS("Clean up probes for terminating and terminated pods")
 	kl.probeManager.CleanupPods(runningPods)
 
